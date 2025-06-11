@@ -1,7 +1,7 @@
 use std::{cmp, io};
 
 use bytes::{Buf, Bytes};
-use hyper::rt::{Read, ReadBufCursor, Write};
+use hyper::rt::{Read, ReadBufCursor, Stats, Write};
 
 use std::{
     pin::Pin,
@@ -82,6 +82,12 @@ where
 
     fn is_write_vectored(&self) -> bool {
         self.inner.is_write_vectored()
+    }
+}
+
+impl<T> Stats for Rewind<T> {
+    fn stats(&mut self) -> hyper::rt::ConnectionStats {
+        hyper::rt::ConnectionStats::default()
     }
 }
 

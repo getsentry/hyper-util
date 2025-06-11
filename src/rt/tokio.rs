@@ -82,6 +82,14 @@ pin_project! {
     pub struct TokioIo<T> {
         #[pin]
         inner: T,
+
+        start_time: Option<std::time::Instant>,
+        dns_resolve_start: Option<std::time::Instant>,
+        dns_resolve_end: Option<std::time::Instant>,
+        connect_start: Option<std::time::Instant>,
+        connect_end: Option<std::time::Instant>,
+        tls_connect_start: Option<std::time::Instant>,
+        tls_connect_end: Option<std::time::Instant>,
     }
 }
 
@@ -117,7 +125,7 @@ where
 }
 
 impl TokioExecutor {
-    /// Create new executor that relies on [`tokio::spawn`] to execute futures.
+    /// Create new executor that relies on [`tokio 6::spawn`] to execute futures.
     pub fn new() -> Self {
         Self {}
     }
@@ -127,8 +135,26 @@ impl TokioExecutor {
 
 impl<T> TokioIo<T> {
     /// Wrap a type implementing Tokio's or hyper's IO traits.
-    pub fn new(inner: T) -> Self {
-        Self { inner }
+    pub fn new(
+        inner: T,
+        start_time: Option<std::time::Instant>,
+        dns_resolve_start: Option<std::time::Instant>,
+        dns_resolve_end: Option<std::time::Instant>,
+        connect_start: Option<std::time::Instant>,
+        connect_end: Option<std::time::Instant>,
+        tls_connect_start: Option<std::time::Instant>,
+        tls_connect_end: Option<std::time::Instant>,
+    ) -> Self {
+        Self {
+            inner,
+            start_time,
+            dns_resolve_start,
+            dns_resolve_end,
+            connect_start,
+            connect_end,
+            tls_connect_start,
+            tls_connect_end,
+        }
     }
 
     /// Borrow the inner type.
@@ -144,6 +170,23 @@ impl<T> TokioIo<T> {
     /// Consume this wrapper and get the inner type.
     pub fn into_inner(self) -> T {
         self.inner
+    }
+}
+
+impl<T> hyper::rt::Stats for TokioIo<T> {
+    fn stats(&mut self) -> hyper::rt::ConnectionStats {
+        // We 'take' the options here, so that (in the case of pooled
+        // connections) we only report the connection-level stats once
+        // for the first request making the connection.
+        hyper::rt::ConnectionStats {
+            start_time: self.start_time.take(),
+            dns_resolve_start: self.dns_resolve_start.take(),
+            dns_resolve_end: self.dns_resolve_end.take(),
+            connect_start: self.connect_start.take(),
+            connect_end: self.connect_end.take(),
+            tls_connect_start: self.tls_connect_start.take(),
+            tls_connect_end: self.tls_connect_end.take(),
+        }
     }
 }
 
