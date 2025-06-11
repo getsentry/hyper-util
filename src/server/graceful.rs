@@ -167,7 +167,7 @@ impl<I, B, S> GracefulConnection for hyper::server::conn::http1::Connection<I, S
 where
     S: hyper::service::HttpService<hyper::body::Incoming, ResBody = B>,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
-    I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static,
+    I: hyper::rt::Read + hyper::rt::Write + hyper::rt::Stats + Unpin + 'static,
     B: hyper::body::Body + 'static,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
 {
@@ -201,7 +201,7 @@ where
     S: hyper::service::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     S::Future: 'static,
-    I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static,
+    I: hyper::rt::Read + hyper::rt::Write + hyper::rt::Stats + Unpin + 'static,
     B: hyper::body::Body + 'static,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     E: hyper::rt::bounds::Http2ServerConnExec<S::Future, B>,
@@ -220,7 +220,7 @@ where
     S: hyper::service::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     S::Future: 'static,
-    I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
+    I: hyper::rt::Read + hyper::rt::Write + hyper::rt::Stats + Unpin + Send + 'static,
     B: hyper::body::Body + 'static,
     B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     E: hyper::rt::bounds::Http2ServerConnExec<S::Future, B>,

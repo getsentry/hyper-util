@@ -7,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_core::ready;
 use futures_util::future::Either;
@@ -531,6 +531,7 @@ where
     R: Resolve,
 {
     async fn call_async(&mut self, dst: Uri) -> Result<TokioIo<TcpStream>, ConnectError> {
+        let start_time = Some(Instant::now());
         let config = &self.config;
 
         let (host, port) = get_host_port(config, &dst)?;
@@ -538,31 +539,45 @@ where
 
         // If the host is already an IP addr (v4 or v6),
         // skip resolving the dns and start connecting right away.
-        let addrs = if let Some(addrs) = dns::SocketAddrs::try_parse(host, port) {
-            addrs
+
+        let dns_resolve_start = Some(Instant::now());
+        let (dns_resolve_end, addrs) = if let Some(addrs) = dns::SocketAddrs::try_parse(host, port)
+        {
+            (None, addrs)
         } else {
             let addrs = resolve(&mut self.resolver, dns::Name::new(host.into()))
                 .await
                 .map_err(ConnectError::dns)?;
+            let dns_resolve = Instant::now();
             let addrs = addrs
                 .map(|mut addr| {
                     set_port(&mut addr, port, dst.port().is_some());
-
                     addr
                 })
                 .collect();
-            dns::SocketAddrs::new(addrs)
+            (Some(dns_resolve), dns::SocketAddrs::new(addrs))
         };
 
         let c = ConnectingTcp::new(addrs, config);
 
+        let connect_start = Some(std::time::Instant::now());
         let sock = c.connect().await?;
+        let connect_end = Some(std::time::Instant::now());
 
         if let Err(e) = sock.set_nodelay(config.nodelay) {
             warn!("tcp set_nodelay error: {}", e);
         }
 
-        Ok(TokioIo::new(sock))
+        Ok(TokioIo::new(
+            sock,
+            start_time,
+            dns_resolve_start,
+            dns_resolve_end,
+            connect_start,
+            connect_end,
+            None,
+            None,
+        ))
     }
 }
 
