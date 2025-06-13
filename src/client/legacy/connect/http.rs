@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use futures_core::ready;
 use futures_util::future::Either;
 use http::uri::{Scheme, Uri};
+use hyper::rt::ConnectionStats;
 use pin_project_lite::pin_project;
 use socket2::TcpKeepalive;
 use tokio::net::{TcpSocket, TcpStream};
@@ -570,13 +571,15 @@ where
 
         Ok(TokioIo::new(
             sock,
-            start_time,
-            dns_resolve_start,
-            dns_resolve_end,
-            connect_start,
-            connect_end,
-            None,
-            None,
+            Some(ConnectionStats {
+                start_time,
+                dns_resolve_start,
+                dns_resolve_end,
+                connect_start,
+                connect_end,
+                tls_connect_start: None,
+                tls_connect_end: None,
+            }),
         ))
     }
 }
