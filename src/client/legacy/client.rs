@@ -16,7 +16,7 @@ use http::uri::Scheme;
 use hyper::client::conn::TrySendError as ConnTrySendError;
 use hyper::header::{HeaderValue, HOST};
 use hyper::rt::Timer;
-use hyper::RequestStats;
+use hyper::HttpConnectionStats;
 use hyper::{body::Body, Method, Request, Response, Uri, Version};
 use tracing::{debug, trace, warn};
 
@@ -110,8 +110,12 @@ pub struct ResponseFuture {
     inner: SyncWrapper<
         Pin<
             Box<
-                dyn Future<Output = Result<(RequestStats, Response<hyper::body::Incoming>), Error>>
-                    + Send,
+                dyn Future<
+                        Output = Result<
+                            (HttpConnectionStats, Response<hyper::body::Incoming>),
+                            Error,
+                        >,
+                    > + Send,
             >,
         >,
     >,
@@ -249,7 +253,7 @@ where
         self,
         mut req: Request<B>,
         pool_key: PoolKey,
-    ) -> Result<(RequestStats, Response<hyper::body::Incoming>), Error> {
+    ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error> {
         let uri = req.uri().clone();
 
         loop {
@@ -282,7 +286,7 @@ where
         &self,
         mut req: Request<B>,
         pool_key: PoolKey,
-    ) -> Result<(RequestStats, Response<hyper::body::Incoming>), TrySendError<B>> {
+    ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), TrySendError<B>> {
         let mut pooled = self
             .connection_for(pool_key)
             .await
@@ -693,7 +697,7 @@ where
     B::Data: Send,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    type Response = (RequestStats, Response<hyper::body::Incoming>);
+    type Response = (HttpConnectionStats, Response<hyper::body::Incoming>);
     type Error = Error;
     type Future = ResponseFuture;
 
@@ -713,7 +717,7 @@ where
     B::Data: Send,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    type Response = (RequestStats, Response<hyper::body::Incoming>);
+    type Response = (HttpConnectionStats, Response<hyper::body::Incoming>);
     type Error = Error;
     type Future = ResponseFuture;
 
@@ -752,7 +756,7 @@ impl<C, B> fmt::Debug for Client<C, B> {
 impl ResponseFuture {
     fn new<F>(value: F) -> Self
     where
-        F: Future<Output = Result<(RequestStats, Response<hyper::body::Incoming>), Error>>
+        F: Future<Output = Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error>>
             + Send
             + 'static,
     {
@@ -774,7 +778,7 @@ impl fmt::Debug for ResponseFuture {
 }
 
 impl Future for ResponseFuture {
-    type Output = Result<(RequestStats, Response<hyper::body::Incoming>), Error>;
+    type Output = Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         self.inner.get_mut().as_mut().poll(cx)
@@ -843,7 +847,7 @@ impl<B: Body + 'static> PoolClient<B> {
         req: Request<B>,
     ) -> impl Future<
         Output = Result<
-            (RequestStats, Response<hyper::body::Incoming>),
+            (HttpConnectionStats, Response<hyper::body::Incoming>),
             ConnTrySendError<Request<B>>,
         >,
     >

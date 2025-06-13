@@ -86,8 +86,8 @@ where
 }
 
 impl<T> Stats for Rewind<T> {
-    fn stats(&mut self) -> hyper::rt::ConnectionStats {
-        hyper::rt::ConnectionStats::default()
+    fn stats(&mut self) -> Option<hyper::rt::ConnectionStats> {
+        None
     }
 }
 
