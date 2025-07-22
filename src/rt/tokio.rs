@@ -129,14 +129,8 @@ impl TokioExecutor {
 
 impl<T> TokioIo<T> {
     /// Wrap a type implementing Tokio's or hyper's IO traits.
-    pub fn new(
-        inner: T,
-        stats: Option<ConnectionStats>, 
-    ) -> Self {
-        Self {
-            inner,
-            stats,
-        }
+    pub fn new(inner: T, stats: Option<ConnectionStats>) -> Self {
+        Self { inner, stats }
     }
 
     /// Borrow the inner type.

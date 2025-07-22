@@ -7,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use futures_core::ready;
 use futures_util::future::Either;
@@ -533,6 +533,12 @@ where
 {
     async fn call_async(&mut self, dst: Uri) -> Result<TokioIo<TcpStream>, ConnectError> {
         let start_time = Some(Instant::now());
+        let start_time_timestamp = Some(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        );
         let config = &self.config;
 
         let (host, port) = get_host_port(config, &dst)?;
@@ -573,6 +579,7 @@ where
             sock,
             Some(ConnectionStats {
                 start_time,
+                start_time_timestamp,
                 dns_resolve_start,
                 dns_resolve_end,
                 connect_start,
