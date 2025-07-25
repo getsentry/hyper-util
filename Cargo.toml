@@ -9,7 +9,11 @@ repository = "https://github.com/hyperium/hyper-util"
 license = "MIT"
 authors = ["Sean McArthur <sean@seanmonstar.com>"]
 keywords = ["http", "hyper", "hyperium"]
-categories = ["network-programming", "web-programming::http-client", "web-programming::http-server"]
+categories = [
+    "network-programming",
+    "web-programming::http-client",
+    "web-programming::http-server",
+]
 edition = "2021"
 rust-version = "1.63"
 
@@ -25,20 +29,26 @@ futures-core = { version = "0.3" }
 futures-util = { version = "0.3.16", default-features = false, optional = true }
 http = "1.0"
 http-body = "1.0.0"
-hyper = { git = "https://github.com/getsentry/hyper", rev = "11a91db433282b4057795e71607f4077d9cd4f18" }
+hyper = { git = "https://github.com/getsentry/hyper", rev = "33f3dc16d0e6c926a47194ed7249540d4fadadc3" }
 ipnet = { version = "2.9", optional = true }
 libc = { version = "0.2", optional = true }
 percent-encoding = { version = "2.3", optional = true }
 pin-project-lite = "0.2.4"
 socket2 = { version = "0.5.9", optional = true, features = ["all"] }
-tracing = { version = "0.1", default-features = false, features = ["std"], optional = true }
-tokio = { version = "1", optional = true, default-features = false  }
+tracing = { version = "0.1", default-features = false, features = [
+    "std",
+], optional = true }
+tokio = { version = "1", optional = true, default-features = false }
 tower-service = { version = "0.3", optional = true }
 
 [dev-dependencies]
-hyper = { git = "https://github.com/getsentry/hyper", rev = "11a91db433282b4057795e71607f4077d9cd4f18", features = ["full"] }
+hyper = { git = "https://github.com/getsentry/hyper", rev = "33f3dc16d0e6c926a47194ed7249540d4fadadc3", features = [
+    "full",
+] }
 bytes = "1"
-futures-util = { version = "0.3.16", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3.16", default-features = false, features = [
+    "alloc",
+] }
 http-body-util = "0.1.0"
 tokio = { version = "1", features = ["macros", "test-util", "signal"] }
 tokio-test = "0.4"
@@ -70,8 +80,19 @@ full = [
     "tracing",
 ]
 
-client = ["hyper/client", "dep:tracing", "dep:futures-channel", "dep:tower-service"]
-client-legacy = ["client", "dep:socket2", "tokio/sync", "dep:libc", "dep:futures-util"]
+client = [
+    "hyper/client",
+    "dep:tracing",
+    "dep:futures-channel",
+    "dep:tower-service",
+]
+client-legacy = [
+    "client",
+    "dep:socket2",
+    "tokio/sync",
+    "dep:libc",
+    "dep:futures-util",
+]
 client-proxy = ["client", "dep:base64", "dep:ipnet", "dep:percent-encoding"]
 client-proxy-system = ["dep:system-configuration", "dep:windows-registry"]
 

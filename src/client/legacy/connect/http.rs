@@ -532,13 +532,11 @@ where
     R: Resolve,
 {
     async fn call_async(&mut self, dst: Uri) -> Result<TokioIo<TcpStream>, ConnectError> {
-        let start_time = Some(Instant::now());
-        let start_time_timestamp = Some(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis(),
-        );
+        let start_time = Instant::now();
+        let start_time_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_micros();
         let config = &self.config;
 
         let (host, port) = get_host_port(config, &dst)?;
@@ -547,10 +545,10 @@ where
         // If the host is already an IP addr (v4 or v6),
         // skip resolving the dns and start connecting right away.
 
-        let dns_resolve_start = Some(Instant::now());
+        let dns_resolve_start = Instant::now();
         let (dns_resolve_end, addrs) = if let Some(addrs) = dns::SocketAddrs::try_parse(host, port)
         {
-            (None, addrs)
+            (dns_resolve_start, addrs)
         } else {
             let addrs = resolve(&mut self.resolver, dns::Name::new(host.into()))
                 .await
@@ -562,14 +560,14 @@ where
                     addr
                 })
                 .collect();
-            (Some(dns_resolve), dns::SocketAddrs::new(addrs))
+            (dns_resolve, dns::SocketAddrs::new(addrs))
         };
 
         let c = ConnectingTcp::new(addrs, config);
 
-        let connect_start = Some(std::time::Instant::now());
+        let connect_start = Instant::now();
         let sock = c.connect().await?;
-        let connect_end = Some(std::time::Instant::now());
+        let connect_end = Instant::now();
 
         if let Err(e) = sock.set_nodelay(config.nodelay) {
             warn!("tcp set_nodelay error: {}", e);
@@ -577,16 +575,14 @@ where
 
         Ok(TokioIo::new(
             sock,
-            Some(ConnectionStats {
+            Some(ConnectionStats::new(
                 start_time,
                 start_time_timestamp,
                 dns_resolve_start,
                 dns_resolve_end,
                 connect_start,
                 connect_end,
-                tls_connect_start: None,
-                tls_connect_end: None,
-            }),
+            )),
         ))
     }
 }
