@@ -29,7 +29,7 @@ futures-core = { version = "0.3" }
 futures-util = { version = "0.3.16", default-features = false, optional = true }
 http = "1.0"
 http-body = "1.0.0"
-hyper = { git = "https://github.com/getsentry/hyper", rev = "33f3dc16d0e6c926a47194ed7249540d4fadadc3" }
+hyper = { git = "https://github.com/getsentry/hyper", rev = "71f79506ec5b97c756f7c35606cfc862dfee7868" }
 ipnet = { version = "2.9", optional = true }
 libc = { version = "0.2", optional = true }
 percent-encoding = { version = "2.3", optional = true }
@@ -42,7 +42,7 @@ tokio = { version = "1", optional = true, default-features = false }
 tower-service = { version = "0.3", optional = true }
 
 [dev-dependencies]
-hyper = { git = "https://github.com/getsentry/hyper", rev = "33f3dc16d0e6c926a47194ed7249540d4fadadc3", features = [
+hyper = { git = "https://github.com/getsentry/hyper", rev = "71f79506ec5b97c756f7c35606cfc862dfee7868", features = [
     "full",
 ] }
 bytes = "1"
