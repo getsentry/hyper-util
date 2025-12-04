@@ -1,3 +1,4 @@
+use hyper::stats::RequestId;
 use pin_project_lite::pin_project;
 use std::{
     future::Future,
@@ -30,17 +31,17 @@ impl<S> TowerToHyperService<S> {
     }
 }
 
-impl<S, R> hyper::service::Service<R> for TowerToHyperService<S>
+impl<S, R> hyper::service::Service<(R, RequestId)> for TowerToHyperService<S>
 where
-    S: tower_service::Service<R> + Clone,
+    S: tower_service::Service<(R, RequestId)> + Clone,
 {
     type Response = S::Response;
     type Error = S::Error;
     type Future = TowerToHyperServiceFuture<S, R>;
 
-    fn call(&self, req: R) -> Self::Future {
+    fn call(&self, (req, req_id): (R, RequestId)) -> Self::Future {
         TowerToHyperServiceFuture {
-            future: Oneshot::new(self.service.clone(), req),
+            future: Oneshot::new(self.service.clone(), req, req_id),
         }
     }
 }
@@ -52,7 +53,7 @@ pin_project! {
     /// [`TowerToHyperService`].
     pub struct TowerToHyperServiceFuture<S, R>
     where
-        S: tower_service::Service<R>,
+        S: tower_service::Service<(R, RequestId)>,
     {
         #[pin]
         future: Oneshot<S, R>,
@@ -61,7 +62,7 @@ pin_project! {
 
 impl<S, R> Future for TowerToHyperServiceFuture<S, R>
 where
-    S: tower_service::Service<R>,
+    S: tower_service::Service<(R, RequestId)>,
 {
     type Output = Result<S::Response, S::Error>;
 

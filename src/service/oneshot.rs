@@ -1,4 +1,5 @@
 use futures_core::ready;
+use hyper::stats::RequestId;
 use pin_project_lite::pin_project;
 use std::future::Future;
 use std::pin::Pin;
@@ -11,10 +12,10 @@ use tower_service::Service;
 pin_project! {
     #[project = OneshotProj]
     #[derive(Debug)]
-    pub enum Oneshot<S: Service<Req>, Req> {
+    pub enum Oneshot<S: Service<(Req, RequestId)>, Req> {
         NotReady {
             svc: S,
-            req: Option<Req>,
+            req: Option<(Req, RequestId)>,
         },
         Called {
             #[pin]
@@ -26,19 +27,19 @@ pin_project! {
 
 impl<S, Req> Oneshot<S, Req>
 where
-    S: Service<Req>,
+    S: Service<(Req, RequestId)>,
 {
-    pub(crate) const fn new(svc: S, req: Req) -> Self {
+    pub(crate) const fn new(svc: S, req: Req, req_id: RequestId) -> Self {
         Oneshot::NotReady {
             svc,
-            req: Some(req),
+            req: Some((req, req_id)),
         }
     }
 }
 
 impl<S, Req> Future for Oneshot<S, Req>
 where
-    S: Service<Req>,
+    S: Service<(Req, RequestId)>,
 {
     type Output = Result<S::Response, S::Error>;
 

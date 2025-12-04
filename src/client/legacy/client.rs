@@ -16,7 +16,7 @@ use http::uri::Scheme;
 use hyper::client::conn::TrySendError as ConnTrySendError;
 use hyper::header::{HeaderValue, HOST};
 use hyper::rt::Timer;
-use hyper::stats::HttpConnectionStats;
+use hyper::stats::{HttpConnectionStats, RequestId};
 use hyper::{body::Body, Method, Request, Response, Uri, Version};
 use tracing::{debug, trace, warn};
 
@@ -119,6 +119,7 @@ pub struct ResponseFuture {
             >,
         >,
     >,
+    req_id: RequestId,
 }
 
 // ===== impl Client =====
@@ -196,7 +197,7 @@ where
 
         let mut req = Request::new(body);
         *req.uri_mut() = uri;
-        self.request(req)
+        self.request(req, hyper::stats::next_request_id())
     }
 
     /// Send a constructed `Request` using this `Client`.
@@ -224,14 +225,17 @@ where
     /// # }
     /// # fn main() {}
     /// ```
-    pub fn request(&self, mut req: Request<B>) -> ResponseFuture {
+    pub fn request(&self, mut req: Request<B>, req_id: RequestId) -> ResponseFuture {
         let is_http_connect = req.method() == Method::CONNECT;
         match req.version() {
             Version::HTTP_11 => (),
             Version::HTTP_10 => {
                 if is_http_connect {
                     warn!("CONNECT is not allowed for HTTP/1.0");
-                    return ResponseFuture::new(future::err(e!(UserUnsupportedRequestMethod)));
+                    return ResponseFuture::new(
+                        future::err(e!(UserUnsupportedRequestMethod)),
+                        req_id,
+                    );
                 }
             }
             Version::HTTP_2 => (),
@@ -242,22 +246,23 @@ where
         let pool_key = match extract_domain(req.uri_mut(), is_http_connect) {
             Ok(s) => s,
             Err(err) => {
-                return ResponseFuture::new(future::err(err));
+                return ResponseFuture::new(future::err(err), req_id);
             }
         };
 
-        ResponseFuture::new(self.clone().send_request(req, pool_key))
+        ResponseFuture::new(self.clone().send_request(req, req_id, pool_key), req_id)
     }
 
     async fn send_request(
         self,
         mut req: Request<B>,
+        req_id: RequestId,
         pool_key: PoolKey,
     ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error> {
         let uri = req.uri().clone();
 
         loop {
-            req = match self.try_send_request(req, pool_key.clone()).await {
+            req = match self.try_send_request(req, req_id, pool_key.clone()).await {
                 Ok(resp) => return Ok(resp),
                 Err(TrySendError::Nope(err)) => return Err(err),
                 Err(TrySendError::Retryable {
@@ -285,10 +290,11 @@ where
     async fn try_send_request(
         &self,
         mut req: Request<B>,
+        req_id: RequestId,
         pool_key: PoolKey,
     ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), TrySendError<B>> {
         let mut pooled = self
-            .connection_for(pool_key)
+            .connection_for(pool_key, req_id)
             .await
             // `connection_for` already retries checkout errors, so if
             // it returns an error, there's not much else to retry
@@ -332,10 +338,10 @@ where
             authority_form(req.uri_mut());
         }
 
-        let (stats, mut res) = match pooled.try_send_request(req).await {
+        let (stats, mut res) = match pooled.try_send_request(req, req_id).await {
             Ok(res) => res,
             Err(mut err) => {
-                return if let Some(req) = err.take_message() {
+                return if let Some((req, req_id)) = err.take_message() {
                     Err(TrySendError::Retryable {
                         connection_reused: pooled.is_reused(),
                         error: e!(Canceled, err.into_error())
@@ -392,9 +398,10 @@ where
     async fn connection_for(
         &self,
         pool_key: PoolKey,
+        req_id: RequestId,
     ) -> Result<pool::Pooled<PoolClient<B>, PoolKey>, Error> {
         loop {
-            match self.one_connection_for(pool_key.clone()).await {
+            match self.one_connection_for(pool_key.clone(), req_id).await {
                 Ok(pooled) => return Ok(pooled),
                 Err(ClientConnectError::Normal(err)) => return Err(err),
                 Err(ClientConnectError::CheckoutIsClosed(reason)) => {
@@ -415,11 +422,12 @@ where
     async fn one_connection_for(
         &self,
         pool_key: PoolKey,
+        req_id: RequestId,
     ) -> Result<pool::Pooled<PoolClient<B>, PoolKey>, ClientConnectError> {
         // Return a single connection if pooling is not enabled
         if !self.pool.is_enabled() {
             return self
-                .connect_to(pool_key)
+                .connect_to(pool_key, req_id)
                 .await
                 .map_err(ClientConnectError::Normal);
         }
@@ -438,7 +446,7 @@ where
         //   connection future is spawned into the runtime to complete,
         //   and then be inserted into the pool as an idle connection.
         let checkout = self.pool.checkout(pool_key.clone());
-        let connect = self.connect_to(pool_key);
+        let connect = self.connect_to(pool_key, req_id);
         let is_ver_h2 = self.config.ver == Ver::Http2;
 
         // The order of the `select` is depended on below...
@@ -508,6 +516,7 @@ where
     fn connect_to(
         &self,
         pool_key: PoolKey,
+        req_id: RequestId,
     ) -> impl Lazy<Output = Result<pool::Pooled<PoolClient<B>, PoolKey>, Error>> + Send + Unpin
     {
         let executor = self.exec.clone();
@@ -537,7 +546,7 @@ where
             };
             Either::Left(
                 connector
-                    .connect(super::connect::sealed::Internal, dst)
+                    .connect(super::connect::sealed::Internal, dst, req_id)
                     .map_err(|src| e!(Connect, src))
                     .and_then(move |io| {
                         let connected = io.connected();
@@ -706,7 +715,7 @@ where
     }
 
     fn call(&mut self, req: Request<B>) -> Self::Future {
-        self.request(req)
+        self.request(req, hyper::stats::next_request_id())
     }
 }
 
@@ -726,7 +735,7 @@ where
     }
 
     fn call(&mut self, req: Request<B>) -> Self::Future {
-        self.request(req)
+        self.request(req, hyper::stats::next_request_id())
     }
 }
 
@@ -754,7 +763,7 @@ impl<C, B> fmt::Debug for Client<C, B> {
 // ===== impl ResponseFuture =====
 
 impl ResponseFuture {
-    fn new<F>(value: F) -> Self
+    fn new<F>(value: F, req_id: RequestId) -> Self
     where
         F: Future<Output = Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error>>
             + Send
@@ -762,12 +771,16 @@ impl ResponseFuture {
     {
         Self {
             inner: SyncWrapper::new(Box::pin(value)),
+            req_id,
         }
     }
 
     fn error_version(ver: Version) -> Self {
         warn!("Request has unsupported version \"{:?}\"", ver);
-        ResponseFuture::new(Box::pin(future::err(e!(UserUnsupportedVersion))))
+        ResponseFuture::new(
+            Box::pin(future::err(e!(UserUnsupportedVersion))),
+            RequestId::invalid(),
+        )
     }
 }
 
@@ -845,10 +858,11 @@ impl<B: Body + 'static> PoolClient<B> {
     fn try_send_request(
         &mut self,
         req: Request<B>,
+        req_id: RequestId,
     ) -> impl Future<
         Output = Result<
             (HttpConnectionStats, Response<hyper::body::Incoming>),
-            ConnTrySendError<Request<B>>,
+            ConnTrySendError<(Request<B>, RequestId)>,
         >,
     >
     where
@@ -857,9 +871,9 @@ impl<B: Body + 'static> PoolClient<B> {
         #[cfg(all(feature = "http1", feature = "http2"))]
         return match self.tx {
             #[cfg(feature = "http1")]
-            PoolTx::Http1(ref mut tx) => Either::Left(tx.try_send_request(req)),
+            PoolTx::Http1(ref mut tx) => Either::Left(tx.try_send_request(req, req_id)),
             #[cfg(feature = "http2")]
-            PoolTx::Http2(ref mut tx) => Either::Right(tx.try_send_request(req)),
+            PoolTx::Http2(ref mut tx) => Either::Right(tx.try_send_request(req, req_id)),
         };
 
         #[cfg(feature = "http1")]
