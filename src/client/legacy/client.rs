@@ -16,7 +16,7 @@ use http::uri::Scheme;
 use hyper::client::conn::TrySendError as ConnTrySendError;
 use hyper::header::{HeaderValue, HOST};
 use hyper::rt::Timer;
-use hyper::stats::{HttpConnectionStats, RequestId};
+use hyper::stats::RequestId;
 use hyper::{body::Body, Method, Request, Response, Uri, Version};
 use tracing::{debug, trace, warn};
 
@@ -108,18 +108,9 @@ enum TrySendError<B> {
 #[must_use = "futures do nothing unless polled"]
 pub struct ResponseFuture {
     inner: SyncWrapper<
-        Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            (HttpConnectionStats, Response<hyper::body::Incoming>),
-                            Error,
-                        >,
-                    > + Send,
-            >,
-        >,
+        Pin<Box<dyn Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send>>,
     >,
-    req_id: RequestId,
+    //req_id: RequestId,
 }
 
 // ===== impl Client =====
@@ -234,7 +225,7 @@ where
                     warn!("CONNECT is not allowed for HTTP/1.0");
                     return ResponseFuture::new(
                         future::err(e!(UserUnsupportedRequestMethod)),
-                        req_id,
+                        /*req_id,*/
                     );
                 }
             }
@@ -246,11 +237,13 @@ where
         let pool_key = match extract_domain(req.uri_mut(), is_http_connect) {
             Ok(s) => s,
             Err(err) => {
-                return ResponseFuture::new(future::err(err), req_id);
+                return ResponseFuture::new(future::err(err) /* , req_id*/);
             }
         };
 
-        ResponseFuture::new(self.clone().send_request(req, req_id, pool_key), req_id)
+        ResponseFuture::new(
+            self.clone().send_request(req, req_id, pool_key), /* , req_id*/
+        )
     }
 
     async fn send_request(
@@ -258,7 +251,7 @@ where
         mut req: Request<B>,
         req_id: RequestId,
         pool_key: PoolKey,
-    ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error> {
+    ) -> Result<Response<hyper::body::Incoming>, Error> {
         let uri = req.uri().clone();
 
         loop {
@@ -292,7 +285,7 @@ where
         mut req: Request<B>,
         req_id: RequestId,
         pool_key: PoolKey,
-    ) -> Result<(HttpConnectionStats, Response<hyper::body::Incoming>), TrySendError<B>> {
+    ) -> Result<Response<hyper::body::Incoming>, TrySendError<B>> {
         let mut pooled = self
             .connection_for(pool_key, req_id)
             .await
@@ -338,10 +331,10 @@ where
             authority_form(req.uri_mut());
         }
 
-        let (stats, mut res) = match pooled.try_send_request(req, req_id).await {
+        let mut res = match pooled.try_send_request(req, req_id).await {
             Ok(res) => res,
             Err(mut err) => {
-                return if let Some((req, req_id)) = err.take_message() {
+                return if let Some((req, _req_id)) = err.take_message() {
                     Err(TrySendError::Retryable {
                         connection_reused: pooled.is_reused(),
                         error: e!(Canceled, err.into_error())
@@ -392,7 +385,7 @@ where
             self.exec.execute(on_idle);
         }
 
-        Ok((stats, res))
+        Ok(res)
     }
 
     async fn connection_for(
@@ -706,7 +699,7 @@ where
     B::Data: Send,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    type Response = (HttpConnectionStats, Response<hyper::body::Incoming>);
+    type Response = Response<hyper::body::Incoming>;
     type Error = Error;
     type Future = ResponseFuture;
 
@@ -726,7 +719,7 @@ where
     B::Data: Send,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
 {
-    type Response = (HttpConnectionStats, Response<hyper::body::Incoming>);
+    type Response = Response<hyper::body::Incoming>;
     type Error = Error;
     type Future = ResponseFuture;
 
@@ -763,15 +756,13 @@ impl<C, B> fmt::Debug for Client<C, B> {
 // ===== impl ResponseFuture =====
 
 impl ResponseFuture {
-    fn new<F>(value: F, req_id: RequestId) -> Self
+    fn new<F>(value: F /* , req_id: RequestId*/) -> Self
     where
-        F: Future<Output = Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error>>
-            + Send
-            + 'static,
+        F: Future<Output = Result<Response<hyper::body::Incoming>, Error>> + Send + 'static,
     {
         Self {
             inner: SyncWrapper::new(Box::pin(value)),
-            req_id,
+            //req_id,
         }
     }
 
@@ -779,7 +770,7 @@ impl ResponseFuture {
         warn!("Request has unsupported version \"{:?}\"", ver);
         ResponseFuture::new(
             Box::pin(future::err(e!(UserUnsupportedVersion))),
-            RequestId::invalid(),
+            /*RequestId::invalid(),*/
         )
     }
 }
@@ -791,7 +782,7 @@ impl fmt::Debug for ResponseFuture {
 }
 
 impl Future for ResponseFuture {
-    type Output = Result<(HttpConnectionStats, Response<hyper::body::Incoming>), Error>;
+    type Output = Result<Response<hyper::body::Incoming>, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         self.inner.get_mut().as_mut().poll(cx)
@@ -860,10 +851,7 @@ impl<B: Body + 'static> PoolClient<B> {
         req: Request<B>,
         req_id: RequestId,
     ) -> impl Future<
-        Output = Result<
-            (HttpConnectionStats, Response<hyper::body::Incoming>),
-            ConnTrySendError<(Request<B>, RequestId)>,
-        >,
+        Output = Result<Response<hyper::body::Incoming>, ConnTrySendError<(Request<B>, RequestId)>>,
     >
     where
         B: Send,

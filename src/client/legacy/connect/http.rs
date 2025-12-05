@@ -619,15 +619,7 @@ where
             Some(AbsoluteDuration::new(connect_start, connect_end)),
         ));
 
-        Ok(TokioIo::new(
-            sock,
-            Some(ConnectionStats::new(
-                Some(start_time),
-                start_time_timestamp,
-                Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
-                Some(AbsoluteDuration::new(connect_start, connect_end)),
-            )),
-        ))
+        Ok(TokioIo::new(sock))
     }
 }
 

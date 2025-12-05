@@ -58,7 +58,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use hyper::rt::{ConnectionStats, Executor, Sleep, Timer};
+use hyper::rt::{Executor, Sleep, Timer};
 use pin_project_lite::pin_project;
 
 #[cfg(feature = "tracing")]
@@ -82,8 +82,6 @@ pin_project! {
     pub struct TokioIo<T> {
         #[pin]
         inner: T,
-
-        stats: Option<ConnectionStats>,
     }
 }
 
@@ -129,8 +127,8 @@ impl TokioExecutor {
 
 impl<T> TokioIo<T> {
     /// Wrap a type implementing Tokio's or hyper's IO traits.
-    pub fn new(inner: T, stats: Option<ConnectionStats>) -> Self {
-        Self { inner, stats }
+    pub fn new(inner: T) -> Self {
+        Self { inner }
     }
 
     /// Borrow the inner type.
@@ -146,16 +144,6 @@ impl<T> TokioIo<T> {
     /// Consume this wrapper and get the inner type.
     pub fn into_inner(self) -> T {
         self.inner
-    }
-}
-
-impl<T> hyper::rt::Stats for TokioIo<T> {
-    fn stats(&mut self) -> Option<hyper::rt::ConnectionStats> {
-        // We 'take' the options here, so that (in the case of pooled
-        // connections) we only report the connection-level stats once
-        // for the first request making the connection.
-
-        self.stats.take()
     }
 }
 

@@ -2,7 +2,6 @@
 
 pub mod upgrade;
 
-use hyper::rt::Stats;
 use hyper::service::HttpService;
 use std::future::Future;
 use std::marker::PhantomPinned;
@@ -170,7 +169,7 @@ impl<E> Builder<E> {
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         B: Body + 'static,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
-        I: Read + Write + Stats + Unpin + 'static,
+        I: Read + Write + Unpin + 'static,
         E: HttpServerConnExec<S::Future, B>,
     {
         let state = match self.version {
@@ -395,7 +394,7 @@ impl<I, S, E, B> Connection<'_, I, S, E>
 where
     S: HttpService<Incoming, ResBody = B>,
     S::Error: Into<Box<dyn StdError + Send + Sync>>,
-    I: Read + Write + Stats + Unpin,
+    I: Read + Write + Unpin,
     B: Body + 'static,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
     E: HttpServerConnExec<S::Future, B>,
@@ -454,7 +453,7 @@ where
     S::Error: Into<Box<dyn StdError + Send + Sync>>,
     B: Body + 'static,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
-    I: Read + Write + Stats + Unpin + 'static,
+    I: Read + Write + Unpin + 'static,
     E: HttpServerConnExec<S::Future, B>,
 {
     type Output = Result<()>;
@@ -550,7 +549,7 @@ impl<I, S, E, B> UpgradeableConnection<'_, I, S, E>
 where
     S: HttpService<Incoming, ResBody = B>,
     S::Error: Into<Box<dyn StdError + Send + Sync>>,
-    I: Read + Write + Stats + Unpin,
+    I: Read + Write + Unpin,
     B: Body + 'static,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
     E: HttpServerConnExec<S::Future, B>,
@@ -609,7 +608,7 @@ where
     S::Error: Into<Box<dyn StdError + Send + Sync>>,
     B: Body + 'static,
     B::Error: Into<Box<dyn StdError + Send + Sync>>,
-    I: Read + Write + Stats + Unpin + Send + 'static,
+    I: Read + Write + Unpin + Send + 'static,
     E: HttpServerConnExec<S::Future, B>,
 {
     type Output = Result<()>;
@@ -833,7 +832,7 @@ impl<E> Http1Builder<'_, E> {
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         B: Body + 'static,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
-        I: Read + Write + Stats + Unpin + 'static,
+        I: Read + Write + Unpin + 'static,
         E: HttpServerConnExec<S::Future, B>,
     {
         self.inner.serve_connection(io, service).await
@@ -1050,7 +1049,7 @@ impl<E> Http2Builder<'_, E> {
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         B: Body + 'static,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
-        I: Read + Write + Stats + Unpin + 'static,
+        I: Read + Write + Unpin + 'static,
         E: HttpServerConnExec<S::Future, B>,
     {
         self.inner.serve_connection(io, service).await
@@ -1245,16 +1244,7 @@ mod tests {
         B::Data: Send,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
     {
-        let stream = TokioIo::new(
-            TcpStream::connect(addr).await.unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap(), None);
         let (sender, connection) = client::conn::http1::handshake(stream).await.unwrap();
 
         tokio::spawn(connection);
@@ -1268,16 +1258,7 @@ mod tests {
         B::Data: Send,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
     {
-        let stream = TokioIo::new(
-            TcpStream::connect(addr).await.unwrap(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap(), None);
         let (sender, connection) = client::conn::http2::Builder::new(TokioExecutor::new())
             .handshake(stream)
             .await
@@ -1297,7 +1278,7 @@ mod tests {
         tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
-                let stream = TokioIo::new(stream, None, None, None, None, None, None, None);
+                let stream = TokioIo::new(stream, None);
                 tokio::task::spawn(async move {
                     let mut builder = auto::Builder::new(TokioExecutor::new());
                     if h1_only {

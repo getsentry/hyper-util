@@ -306,7 +306,7 @@ pub(super) mod sealed {
 
     use ::http::Uri;
     use hyper::{
-        rt::{Read, Stats, Write},
+        rt::{Read, Write},
         stats::RequestId,
     };
 
@@ -337,7 +337,7 @@ pub(super) mod sealed {
     }
 
     pub trait ConnectSvc {
-        type Connection: Read + Write + Stats + Connection + Unpin + Send + 'static;
+        type Connection: Read + Write + Connection + Unpin + Send + 'static;
         type Error: Into<Box<dyn StdError + Send + Sync>>;
         type Future: Future<Output = Result<Self::Connection, Self::Error>> + Unpin + Send + 'static;
 
@@ -349,7 +349,7 @@ pub(super) mod sealed {
         S: tower_service::Service<(Uri, RequestId), Response = T> + Send + 'static,
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         S::Future: Unpin + Send,
-        T: Read + Write + Stats + Connection + Unpin + Send + 'static,
+        T: Read + Write + Connection + Unpin + Send + 'static,
     {
         type _Svc = S;
 
@@ -368,7 +368,7 @@ pub(super) mod sealed {
         S: tower_service::Service<(Uri, RequestId), Response = T> + Send + 'static,
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         S::Future: Unpin + Send,
-        T: Read + Write + Stats + Connection + Unpin + Send + 'static,
+        T: Read + Write + Connection + Unpin + Send + 'static,
     {
         type Connection = T;
         type Error = S::Error;
