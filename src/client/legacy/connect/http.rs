@@ -545,16 +545,15 @@ where
         let dns_resolve_start = start_time;
         let config = &self.config;
 
-        let (host, port) =
-            match get_host_port(config, &dst) {
-                Ok(res) => res,
-                Err(e) => {
-                    hyper::stats::get_request_stats(req_id).set_connection_stats(
-                        ConnectionStats::new(Some(start_time), start_time_timestamp, None, None),
-                    );
-                    return Err(e);
-                }
-            };
+        let (host, port) = match get_host_port(config, &dst) {
+            Ok(res) => res,
+            Err(e) => {
+                hyper::stats::get_request_stats(&req_id).set_connection_stats(
+                    ConnectionStats::new(Some(start_time), start_time_timestamp, None, None),
+                );
+                return Err(e);
+            }
+        };
         let host = host.trim_start_matches('[').trim_end_matches(']');
 
         // If the host is already an IP addr (v4 or v6),
@@ -570,7 +569,7 @@ where
             {
                 Ok(addrs) => addrs,
                 Err(e) => {
-                    hyper::stats::get_request_stats(req_id).set_connection_stats(
+                    hyper::stats::get_request_stats(&req_id).set_connection_stats(
                         ConnectionStats::new(
                             Some(start_time),
                             start_time_timestamp,
@@ -597,12 +596,14 @@ where
         let sock = match c.connect().await {
             Ok(sock) => sock,
             Err(e) => {
-                hyper::stats::get_request_stats(req_id).set_connection_stats(ConnectionStats::new(
-                    Some(start_time),
-                    start_time_timestamp,
-                    Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
-                    Some(AbsoluteDuration::new(connect_start, Instant::now())),
-                ));
+                hyper::stats::get_request_stats(&req_id).set_connection_stats(
+                    ConnectionStats::new(
+                        Some(start_time),
+                        start_time_timestamp,
+                        Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
+                        Some(AbsoluteDuration::new(connect_start, Instant::now())),
+                    ),
+                );
                 return Err(e);
             }
         };
@@ -612,7 +613,7 @@ where
             warn!("tcp set_nodelay error: {}", e);
         }
 
-        hyper::stats::get_request_stats(req_id).set_connection_stats(ConnectionStats::new(
+        hyper::stats::get_request_stats(&req_id).set_connection_stats(ConnectionStats::new(
             Some(start_time),
             start_time_timestamp,
             Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
@@ -1091,7 +1092,13 @@ mod tests {
     where
         C: Connect,
     {
-        connector.connect(super::super::sealed::Internal, dst).await
+        connector
+            .connect(
+                super::super::sealed::Internal,
+                dst,
+                hyper::stats::next_request_id(),
+            )
+            .await
     }
 
     #[tokio::test]

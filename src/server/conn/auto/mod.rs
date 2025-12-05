@@ -1244,7 +1244,7 @@ mod tests {
         B::Data: Send,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
     {
-        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap(), None);
+        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap());
         let (sender, connection) = client::conn::http1::handshake(stream).await.unwrap();
 
         tokio::spawn(connection);
@@ -1258,7 +1258,7 @@ mod tests {
         B::Data: Send,
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
     {
-        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap(), None);
+        let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap());
         let (sender, connection) = client::conn::http2::Builder::new(TokioExecutor::new())
             .handshake(stream)
             .await
@@ -1278,7 +1278,7 @@ mod tests {
         tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
-                let stream = TokioIo::new(stream, None);
+                let stream = TokioIo::new(stream);
                 tokio::task::spawn(async move {
                     let mut builder = auto::Builder::new(TokioExecutor::new());
                     if h1_only {
