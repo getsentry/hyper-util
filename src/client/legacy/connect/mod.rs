@@ -305,7 +305,10 @@ pub(super) mod sealed {
     use std::future::Future;
 
     use ::http::Uri;
-    use hyper::rt::{Read, Stats, Write};
+    use hyper::{
+        rt::{Read, Write},
+        stats::RequestId,
+    };
 
     use super::Connection;
 
@@ -325,50 +328,60 @@ pub(super) mod sealed {
         #[doc(hidden)]
         type _Svc: ConnectSvc;
         #[doc(hidden)]
-        fn connect(self, internal_only: Internal, dst: Uri) -> <Self::_Svc as ConnectSvc>::Future;
+        fn connect(
+            self,
+            internal_only: Internal,
+            dst: Uri,
+            req_id: RequestId,
+        ) -> <Self::_Svc as ConnectSvc>::Future;
     }
 
     pub trait ConnectSvc {
-        type Connection: Read + Write + Stats + Connection + Unpin + Send + 'static;
+        type Connection: Read + Write + Connection + Unpin + Send + 'static;
         type Error: Into<Box<dyn StdError + Send + Sync>>;
         type Future: Future<Output = Result<Self::Connection, Self::Error>> + Unpin + Send + 'static;
 
-        fn connect(self, internal_only: Internal, dst: Uri) -> Self::Future;
+        fn connect(self, internal_only: Internal, dst: Uri, req_id: RequestId) -> Self::Future;
     }
 
     impl<S, T> Connect for S
     where
-        S: tower_service::Service<Uri, Response = T> + Send + 'static,
+        S: tower_service::Service<(Uri, RequestId), Response = T> + Send + 'static,
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         S::Future: Unpin + Send,
-        T: Read + Write + Stats + Connection + Unpin + Send + 'static,
+        T: Read + Write + Connection + Unpin + Send + 'static,
     {
         type _Svc = S;
 
-        fn connect(self, _: Internal, dst: Uri) -> crate::service::Oneshot<S, Uri> {
-            crate::service::Oneshot::new(self, dst)
+        fn connect(
+            self,
+            _: Internal,
+            dst: Uri,
+            req_id: RequestId,
+        ) -> crate::service::Oneshot<S, Uri> {
+            crate::service::Oneshot::new(self, dst, req_id)
         }
     }
 
     impl<S, T> ConnectSvc for S
     where
-        S: tower_service::Service<Uri, Response = T> + Send + 'static,
+        S: tower_service::Service<(Uri, RequestId), Response = T> + Send + 'static,
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         S::Future: Unpin + Send,
-        T: Read + Write + Stats + Connection + Unpin + Send + 'static,
+        T: Read + Write + Connection + Unpin + Send + 'static,
     {
         type Connection = T;
         type Error = S::Error;
         type Future = crate::service::Oneshot<S, Uri>;
 
-        fn connect(self, _: Internal, dst: Uri) -> Self::Future {
-            crate::service::Oneshot::new(self, dst)
+        fn connect(self, _: Internal, dst: Uri, req_id: RequestId) -> Self::Future {
+            crate::service::Oneshot::new(self, dst, req_id)
         }
     }
 
     impl<S, T> Sealed for S
     where
-        S: tower_service::Service<Uri, Response = T> + Send,
+        S: tower_service::Service<(Uri, RequestId), Response = T> + Send,
         S::Error: Into<Box<dyn StdError + Send + Sync>>,
         S::Future: Unpin + Send,
         T: Read + Write + Connection + Unpin + Send + 'static,

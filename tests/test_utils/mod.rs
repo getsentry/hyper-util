@@ -6,6 +6,7 @@ use futures_channel::mpsc;
 use futures_util::task::{Context, Poll};
 use futures_util::Future;
 use futures_util::TryFutureExt;
+use hyper::stats::{self, RequestId};
 use hyper::Uri;
 use tokio::io::{self, AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
@@ -48,27 +49,31 @@ impl DebugConnector {
     }
 }
 
-impl tower_service::Service<Uri> for DebugConnector {
+impl tower_service::Service<(Uri, RequestId)> for DebugConnector {
     type Response = DebugStream;
-    type Error = <HttpConnector as tower_service::Service<Uri>>::Error;
+    type Error = <HttpConnector as tower_service::Service<(Uri, RequestId)>>::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // don't forget to check inner service is ready :)
-        tower_service::Service::<Uri>::poll_ready(&mut self.http, cx)
+        tower_service::Service::<(Uri, RequestId)>::poll_ready(&mut self.http, cx)
     }
 
-    fn call(&mut self, dst: Uri) -> Self::Future {
+    fn call(&mut self, (dst, _req_id): (Uri, RequestId)) -> Self::Future {
         self.connects.fetch_add(1, Ordering::SeqCst);
         let closes = self.closes.clone();
         let is_proxy = self.is_proxy;
         let is_alpn_h2 = self.alpn_h2;
-        Box::pin(self.http.call(dst).map_ok(move |tcp| DebugStream {
-            tcp,
-            on_drop: closes,
-            is_alpn_h2,
-            is_proxy,
-        }))
+        Box::pin(
+            self.http
+                .call((dst, stats::next_request_id()))
+                .map_ok(move |tcp| DebugStream {
+                    tcp,
+                    on_drop: closes,
+                    is_alpn_h2,
+                    is_proxy,
+                }),
+        )
     }
 }
 

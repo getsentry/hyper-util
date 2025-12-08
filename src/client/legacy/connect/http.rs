@@ -13,6 +13,7 @@ use futures_core::ready;
 use futures_util::future::Either;
 use http::uri::{Scheme, Uri};
 use hyper::rt::ConnectionStats;
+use hyper::stats::{AbsoluteDuration, RequestId};
 use pin_project_lite::pin_project;
 use socket2::TcpKeepalive;
 use tokio::net::{TcpSocket, TcpStream};
@@ -456,7 +457,7 @@ impl<R: fmt::Debug> fmt::Debug for HttpConnector<R> {
     }
 }
 
-impl<R> tower_service::Service<Uri> for HttpConnector<R>
+impl<R> tower_service::Service<(Uri, RequestId)> for HttpConnector<R>
 where
     R: Resolve + Clone + Send + Sync + 'static,
     R::Future: Send,
@@ -470,10 +471,10 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: Uri) -> Self::Future {
+    fn call(&mut self, (dst, req_id): (Uri, RequestId)) -> Self::Future {
         let mut self_ = self.clone();
         HttpConnecting {
-            fut: Box::pin(async move { self_.call_async(dst).await }),
+            fut: Box::pin(async move { self_.call_async(dst, req_id).await }),
             _marker: PhantomData,
         }
     }
@@ -531,28 +532,54 @@ impl<R> HttpConnector<R>
 where
     R: Resolve,
 {
-    async fn call_async(&mut self, dst: Uri) -> Result<TokioIo<TcpStream>, ConnectError> {
+    async fn call_async(
+        &mut self,
+        dst: Uri,
+        req_id: RequestId,
+    ) -> Result<TokioIo<TcpStream>, ConnectError> {
         let start_time = Instant::now();
         let start_time_timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_micros();
+        let dns_resolve_start = start_time;
         let config = &self.config;
 
-        let (host, port) = get_host_port(config, &dst)?;
+        let (host, port) = match get_host_port(config, &dst) {
+            Ok(res) => res,
+            Err(e) => {
+                hyper::stats::get_request_stats(&req_id).set_connection_stats(
+                    ConnectionStats::new(Some(start_time), start_time_timestamp, None, None),
+                );
+                return Err(e);
+            }
+        };
         let host = host.trim_start_matches('[').trim_end_matches(']');
 
         // If the host is already an IP addr (v4 or v6),
         // skip resolving the dns and start connecting right away.
 
-        let dns_resolve_start = Instant::now();
         let (dns_resolve_end, addrs) = if let Some(addrs) = dns::SocketAddrs::try_parse(host, port)
         {
             (dns_resolve_start, addrs)
         } else {
-            let addrs = resolve(&mut self.resolver, dns::Name::new(host.into()))
+            let addrs = match resolve(&mut self.resolver, dns::Name::new(host.into()))
                 .await
-                .map_err(ConnectError::dns)?;
+                .map_err(ConnectError::dns)
+            {
+                Ok(addrs) => addrs,
+                Err(e) => {
+                    hyper::stats::get_request_stats(&req_id).set_connection_stats(
+                        ConnectionStats::new(
+                            Some(start_time),
+                            start_time_timestamp,
+                            Some(AbsoluteDuration::new(dns_resolve_start, Instant::now())),
+                            None,
+                        ),
+                    );
+                    return Err(e);
+                }
+            };
             let dns_resolve = Instant::now();
             let addrs = addrs
                 .map(|mut addr| {
@@ -566,24 +593,34 @@ where
         let c = ConnectingTcp::new(addrs, config);
 
         let connect_start = Instant::now();
-        let sock = c.connect().await?;
+        let sock = match c.connect().await {
+            Ok(sock) => sock,
+            Err(e) => {
+                hyper::stats::get_request_stats(&req_id).set_connection_stats(
+                    ConnectionStats::new(
+                        Some(start_time),
+                        start_time_timestamp,
+                        Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
+                        Some(AbsoluteDuration::new(connect_start, Instant::now())),
+                    ),
+                );
+                return Err(e);
+            }
+        };
         let connect_end = Instant::now();
 
         if let Err(e) = sock.set_nodelay(config.nodelay) {
             warn!("tcp set_nodelay error: {}", e);
         }
 
-        Ok(TokioIo::new(
-            sock,
-            Some(ConnectionStats::new(
-                start_time,
-                start_time_timestamp,
-                dns_resolve_start,
-                dns_resolve_end,
-                connect_start,
-                connect_end,
-            )),
-        ))
+        hyper::stats::get_request_stats(&req_id).set_connection_stats(ConnectionStats::new(
+            Some(start_time),
+            start_time_timestamp,
+            Some(AbsoluteDuration::new(dns_resolve_start, dns_resolve_end)),
+            Some(AbsoluteDuration::new(connect_start, connect_end)),
+        ));
+
+        Ok(TokioIo::new(sock))
     }
 }
 
@@ -1055,7 +1092,13 @@ mod tests {
     where
         C: Connect,
     {
-        connector.connect(super::super::sealed::Internal, dst).await
+        connector
+            .connect(
+                super::super::sealed::Internal,
+                dst,
+                hyper::stats::next_request_id(),
+            )
+            .await
     }
 
     #[tokio::test]

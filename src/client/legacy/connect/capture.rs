@@ -66,7 +66,7 @@ pub struct CaptureConnection {
 /// });
 ///
 /// let client = Client::builder(TokioExecutor::new()).build_http();
-/// client.request(request).await.expect("request failed");
+/// client.request(request, hyper::stats::next_request_id()).await.expect("request failed");
 /// # }
 /// ```
 pub fn capture_connection<B>(request: &mut Request<B>) -> CaptureConnection {

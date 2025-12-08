@@ -15,6 +15,7 @@ use futures_util::stream::StreamExt;
 use futures_util::{self, Stream};
 use http_body_util::BodyExt;
 use http_body_util::{Empty, Full, StreamBody};
+use hyper::stats::RequestId;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use hyper::body::Bytes;
@@ -41,6 +42,8 @@ fn s(buf: &[u8]) -> &str {
 #[test]
 fn drop_body_before_eof_closes_connection() {
     // https://github.com/hyperium/hyper/issues/1353
+
+    use hyper::stats;
     let _ = pretty_env_logger::try_init();
 
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -73,9 +76,11 @@ fn drop_body_before_eof_closes_connection() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req).map_ok(move |res| {
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-    });
+    let res = client
+        .request(req, stats::next_request_id())
+        .map_ok(move |res| {
+            assert_eq!(res.status(), hyper::StatusCode::OK);
+        });
     let rx = rx1;
     rt.block_on(async move {
         let (res, _) = future::join(res, rx).await;
@@ -88,6 +93,8 @@ fn drop_body_before_eof_closes_connection() {
 #[cfg(not(miri))]
 #[tokio::test]
 async fn drop_client_closes_idle_connections() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
 
     let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -124,9 +131,11 @@ async fn drop_client_closes_idle_connections() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req).map_ok(move |res| {
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-    });
+    let res = client
+        .request(req, stats::next_request_id())
+        .map_ok(move |res| {
+            assert_eq!(res.status(), hyper::StatusCode::OK);
+        });
     let rx = rx1;
     let (res, _) = future::join(res, rx).await;
     res.unwrap();
@@ -178,6 +187,8 @@ async fn drop_response_future_closes_in_progress_connection() {
     });
 
     let res = {
+        use hyper::stats;
+
         let client = Client::builder(TokioExecutor::new()).build(
             DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx),
         );
@@ -186,7 +197,9 @@ async fn drop_response_future_closes_in_progress_connection() {
             .uri(&*format!("http://{addr}/a"))
             .body(Empty::<Bytes>::new())
             .unwrap();
-        client.request(req).map(|_| unreachable!())
+        client
+            .request(req, stats::next_request_id())
+            .map(|_| unreachable!())
     };
 
     future::select(res, rx1).await;
@@ -231,6 +244,8 @@ async fn drop_response_body_closes_in_progress_connection() {
 
     let rx = rx1;
     let res = {
+        use hyper::stats;
+
         let client = Client::builder(TokioExecutor::new()).build(
             DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx),
         );
@@ -240,7 +255,7 @@ async fn drop_response_body_closes_in_progress_connection() {
             .body(Empty::<Bytes>::new())
             .unwrap();
         // notably, haven't read body yet
-        client.request(req)
+        client.request(req, stats::next_request_id())
     };
 
     let (res, _) = future::join(res, rx).await;
@@ -258,6 +273,8 @@ async fn drop_response_body_closes_in_progress_connection() {
 #[tokio::test]
 async fn no_keep_alive_closes_connection() {
     // https://github.com/hyperium/hyper/issues/1383
+
+    use hyper::stats;
     let _ = pretty_env_logger::try_init();
 
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -294,9 +311,11 @@ async fn no_keep_alive_closes_connection() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req).map_ok(move |res| {
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-    });
+    let res = client
+        .request(req, stats::next_request_id())
+        .map_ok(move |res| {
+            assert_eq!(res.status(), hyper::StatusCode::OK);
+        });
     let rx = rx1;
     let (res, _) = future::join(res, rx).await;
     res.unwrap();
@@ -311,6 +330,8 @@ async fn no_keep_alive_closes_connection() {
 #[tokio::test]
 async fn socket_disconnect_closes_idle_conn() {
     // notably when keep-alive is enabled
+
+    use hyper::stats;
     let _ = pretty_env_logger::try_init();
 
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -340,9 +361,11 @@ async fn socket_disconnect_closes_idle_conn() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req).map_ok(move |res| {
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-    });
+    let res = client
+        .request(req, stats::next_request_id())
+        .map_ok(move |res| {
+            assert_eq!(res.status(), hyper::StatusCode::OK);
+        });
     let rx = rx1;
 
     let (res, _) = future::join(res, rx).await;
@@ -359,6 +382,8 @@ async fn socket_disconnect_closes_idle_conn() {
 fn connect_call_is_lazy() {
     // We especially don't want connects() triggered if there's
     // idle connections that the Checkout would have found
+
+    use hyper::stats;
     let _ = pretty_env_logger::try_init();
 
     let _rt = runtime();
@@ -372,7 +397,7 @@ fn connect_call_is_lazy() {
         .uri("http://hyper.local/a")
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let _fut = client.request(req);
+    let _fut = client.request(req, stats::next_request_id());
     // internal Connect::connect should have been lazy, and not
     // triggered an actual connect yet.
     assert_eq!(connects.load(Ordering::Relaxed), 0);
@@ -381,6 +406,8 @@ fn connect_call_is_lazy() {
 #[cfg(not(miri))]
 #[test]
 fn client_keep_alive_0() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -420,7 +447,7 @@ fn client_keep_alive_0() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(connects.load(Ordering::SeqCst), 1);
@@ -434,7 +461,7 @@ fn client_keep_alive_0() {
         .uri(&*format!("http://{addr}/b"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(
@@ -448,6 +475,8 @@ fn client_keep_alive_0() {
 #[cfg(not(miri))]
 #[test]
 fn client_keep_alive_extra_body() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -492,7 +521,7 @@ fn client_keep_alive_extra_body() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(connects.load(Ordering::Relaxed), 1);
@@ -502,7 +531,7 @@ fn client_keep_alive_extra_body() {
         .uri(&*format!("http://{addr}/b"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(connects.load(Ordering::Relaxed), 2);
@@ -511,6 +540,8 @@ fn client_keep_alive_extra_body() {
 #[cfg(not(miri))]
 #[tokio::test]
 async fn client_keep_alive_when_response_before_request_body_ends() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -557,9 +588,11 @@ async fn client_keep_alive_when_response_before_request_body_ends() {
         .uri(&*format!("http://{addr}/a"))
         .body(StreamBody::new(delayed_body))
         .unwrap();
-    let res = client.request(req).map_ok(move |res| {
-        assert_eq!(res.status(), hyper::StatusCode::OK);
-    });
+    let res = client
+        .request(req, stats::next_request_id())
+        .map_ok(move |res| {
+            assert_eq!(res.status(), hyper::StatusCode::OK);
+        });
 
     future::join(res, rx2).await.0.unwrap();
     future::poll_fn(|ctx| {
@@ -584,6 +617,8 @@ async fn client_keep_alive_eager_when_chunked() {
     // determined by some other factor, like decompression, and thus
     // it is in't polled a final time to clear the final 0-len chunk,
     // try to eagerly clear it so the connection can still be used.
+
+    use hyper::stats;
 
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -632,7 +667,7 @@ async fn client_keep_alive_eager_when_chunked() {
         .uri(&*format!("http://{addr}/a"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let fut = client.request(req);
+    let fut = client.request(req, stats::next_request_id());
 
     let resp = future::join(fut, rx).map(|r| r.0).await.unwrap();
     assert_eq!(connects.load(Ordering::SeqCst), 1);
@@ -652,7 +687,7 @@ async fn client_keep_alive_eager_when_chunked() {
         .uri(&*format!("http://{addr}/b"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let fut = client.request(req);
+    let fut = client.request(req, stats::next_request_id());
     future::join(fut, rx).map(|r| r.0).await.unwrap();
 
     assert_eq!(
@@ -666,6 +701,8 @@ async fn client_keep_alive_eager_when_chunked() {
 #[cfg(not(miri))]
 #[test]
 fn connect_proxy_sends_absolute_uri() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -696,13 +733,15 @@ fn connect_proxy_sends_absolute_uri() {
         .uri(&*format!("http://{addr}/foo/bar"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 }
 
 #[cfg(not(miri))]
 #[test]
 fn connect_proxy_http_connect_sends_authority_form() {
+    use hyper::stats;
+
     let _ = pretty_env_logger::try_init();
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = server.local_addr().unwrap();
@@ -734,13 +773,14 @@ fn connect_proxy_http_connect_sends_authority_form() {
         .uri(&*format!("http://{addr}/useless/path"))
         .body(Empty::<Bytes>::new())
         .unwrap();
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 }
 
 #[cfg(not(miri))]
 #[test]
 fn client_upgrade() {
+    use hyper::stats;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let _ = pretty_env_logger::try_init();
@@ -784,7 +824,7 @@ fn client_upgrade() {
         .body(Empty::<Bytes>::new())
         .unwrap();
 
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     let res = rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(res.status(), 101);
@@ -805,6 +845,7 @@ fn client_upgrade() {
 fn client_http2_upgrade() {
     use http::{Method, Response, Version};
     use hyper::service::service_fn;
+    use hyper::stats;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -867,7 +908,7 @@ fn client_http2_upgrade() {
         .body(Empty::<Bytes>::new())
         .unwrap();
 
-    let res = client.request(req);
+    let res = client.request(req, stats::next_request_id());
     let res = rt.block_on(res).unwrap();
 
     assert_eq!(res.status(), http::StatusCode::OK);
@@ -939,6 +980,7 @@ fn alpn_h2() {
             .version(hyper::Version::HTTP_2)
             .body(Empty::<Bytes>::new())
             .unwrap(),
+        hyper::stats::next_request_id(),
     );
     rt.block_on(res5).unwrap();
 
@@ -977,7 +1019,8 @@ fn capture_connection_on_client() {
         .body(Empty::<Bytes>::new())
         .unwrap();
     let captured_conn = capture_connection(&mut req);
-    rt.block_on(client.request(req)).expect("200 OK");
+    rt.block_on(client.request(req, hyper::stats::next_request_id()))
+        .expect("200 OK");
     assert!(captured_conn.connection_metadata().is_some());
 }
 
@@ -1025,12 +1068,15 @@ fn connection_poisoning() {
     };
     let mut req = make_request();
     let captured_conn = capture_connection(&mut req);
-    rt.block_on(client.request(req)).expect("200 OK");
+    rt.block_on(client.request(req, hyper::stats::next_request_id()))
+        .expect("200 OK");
     assert_eq!(num_conns.load(Ordering::SeqCst), 1);
     assert_eq!(num_requests.load(Ordering::SeqCst), 1);
 
-    rt.block_on(client.request(make_request())).expect("200 OK");
-    rt.block_on(client.request(make_request())).expect("200 OK");
+    rt.block_on(client.request(make_request(), hyper::stats::next_request_id()))
+        .expect("200 OK");
+    rt.block_on(client.request(make_request(), hyper::stats::next_request_id()))
+        .expect("200 OK");
     // Before poisoning the connection is reused
     assert_eq!(num_conns.load(Ordering::SeqCst), 1);
     assert_eq!(num_requests.load(Ordering::SeqCst), 3);
@@ -1040,13 +1086,15 @@ fn connection_poisoning() {
         .unwrap()
         .poison();
 
-    rt.block_on(client.request(make_request())).expect("200 OK");
+    rt.block_on(client.request(make_request(), hyper::stats::next_request_id()))
+        .expect("200 OK");
 
     // After poisoning, a new connection is established
     assert_eq!(num_conns.load(Ordering::SeqCst), 2);
     assert_eq!(num_requests.load(Ordering::SeqCst), 4);
 
-    rt.block_on(client.request(make_request())).expect("200 OK");
+    rt.block_on(client.request(make_request(), hyper::stats::next_request_id()))
+        .expect("200 OK");
     // another request can still reuse:
     assert_eq!(num_conns.load(Ordering::SeqCst), 2);
     assert_eq!(num_requests.load(Ordering::SeqCst), 5);
@@ -1251,7 +1299,7 @@ impl MockConnector {
 
 // Implement tower_service::Service for MockConnector to create MockConnection instances.
 // Takes a hyper::Uri and returns a future resolving to a MockConnection.
-impl tower_service::Service<hyper::Uri> for MockConnector {
+impl tower_service::Service<(hyper::Uri, RequestId)> for MockConnector {
     type Response = crate::MockConnection;
     type Error = std::io::Error;
     type Future = std::pin::Pin<
@@ -1272,7 +1320,7 @@ impl tower_service::Service<hyper::Uri> for MockConnector {
 
     // Creates a new MockConnection for the given URI.
     // Configures the connection based on io_builder and conn_error.
-    fn call(&mut self, _req: hyper::Uri) -> Self::Future {
+    fn call(&mut self, _req: (hyper::Uri, RequestId)) -> Self::Future {
         // Clone the IoBuilder to create a fresh mock I/O object.
         let mut io_builder = self.io_builder.clone();
         // Clone the optional connection error for this call.
@@ -1358,7 +1406,9 @@ async fn test_connection_error_propagation_pr184() {
         .expect("failed to build request");
     // Send the request and capture the result.
     // Expect it to fail due to the simulated connection error.
-    let result = client.request(request).await;
+    let result = client
+        .request(request, hyper::stats::next_request_id())
+        .await;
     // Extract the error, as the request should fail.
     let err = result.expect_err("expected request to fail");
     // Log the full error for debugging, including its structure.
@@ -1412,7 +1462,9 @@ async fn test_incomplete_message_error_pr184() {
         .expect("failed to build request");
     // Send the request and capture the result.
     // Expect failure due to EOF causing IncompleteMessage.
-    let result = client.request(request).await;
+    let result = client
+        .request(request, hyper::stats::next_request_id())
+        .await;
     // Extract the error, as the request should fail.
     // Without PR #184, expect ChannelClosed; with PR #184, expect IncompleteMessage.
     let err = result.expect_err("expected request to fail");
@@ -1480,7 +1532,7 @@ async fn test_successful_connection() {
     // Send the request and capture the response.
     // Expect a successful response due to the configured IoBuilder.
     let response = client
-        .request(request)
+        .request(request, hyper::stats::next_request_id())
         .await
         .expect("request should succeed");
     // Verify the response status is 200 OK.

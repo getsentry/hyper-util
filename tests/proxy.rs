@@ -14,8 +14,13 @@ async fn test_tunnel_works() {
     let proxy_dst = format!("http://{addr}").parse().expect("uri");
     let mut connector = Tunnel::new(proxy_dst, HttpConnector::new());
     let t1 = tokio::spawn(async move {
+        use hyper::stats;
+
         let _conn = connector
-            .call("https://hyper.rs".parse().unwrap())
+            .call((
+                "https://hyper.rs".parse().unwrap(),
+                stats::next_request_id(),
+            ))
             .await
             .expect("tunnel");
     });
@@ -55,7 +60,10 @@ async fn test_socks_v5_without_auth_works() {
     // Will use `SocksV5` to establish proxy tunnel.
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
-        let conn = connector.call(target_dst).await.expect("tunnel");
+        let conn = connector
+            .call((target_dst, hyper::stats::next_request_id()))
+            .await
+            .expect("tunnel");
         let mut tcp = conn.into_inner();
 
         tcp.write_all(b"Hello World!").await.expect("write 1");
@@ -139,7 +147,10 @@ async fn test_socks_v5_with_auth_works() {
     // Will use `SocksV5` to establish proxy tunnel.
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
-        let conn = connector.call(target_dst).await.expect("tunnel");
+        let conn = connector
+            .call((target_dst, hyper::stats::next_request_id()))
+            .await
+            .expect("tunnel");
         let mut tcp = conn.into_inner();
 
         tcp.write_all(b"Hello World!").await.expect("write 1");
@@ -230,7 +241,10 @@ async fn test_socks_v5_with_server_resolved_domain_works() {
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
         let _conn = connector
-            .call("https://hyper.rs:443".try_into().unwrap())
+            .call((
+                "https://hyper.rs:443".try_into().unwrap(),
+                hyper::stats::next_request_id(),
+            ))
             .await
             .expect("tunnel");
     });
@@ -296,7 +310,10 @@ async fn test_socks_v5_with_locally_resolved_domain_works() {
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
         let _conn = connector
-            .call("https://hyper.rs:443".try_into().unwrap())
+            .call((
+                "https://hyper.rs:443".try_into().unwrap(),
+                hyper::stats::next_request_id(),
+            ))
             .await
             .expect("tunnel");
     });
@@ -358,7 +375,10 @@ async fn test_socks_v4_works() {
     // Will use `SocksV4` to establish proxy tunnel.
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
-        let conn = connector.call(target_dst).await.expect("tunnel");
+        let conn = connector
+            .call((target_dst, hyper::stats::next_request_id()))
+            .await
+            .expect("tunnel");
         let mut tcp = conn.into_inner();
 
         tcp.write_all(b"Hello World!").await.expect("write 1");
@@ -435,7 +455,10 @@ async fn test_socks_v5_optimistic_works() {
     // Will use `SocksV5` to establish proxy tunnel.
     // Will send "Hello World!" to the target and receive "Goodbye!" back.
     let t1 = tokio::spawn(async move {
-        let _ = connector.call(target_dst).await.expect("tunnel");
+        let _ = connector
+            .call((target_dst, hyper::stats::next_request_id()))
+            .await
+            .expect("tunnel");
     });
 
     // Proxy
