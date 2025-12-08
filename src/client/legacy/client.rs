@@ -212,7 +212,7 @@ where
     ///     .body(Full::from("Hallo!"))
     ///     .expect("request builder");
     ///
-    /// let future = client.request(req);
+    /// let future = client.request(req, hyper::stats::next_request_id());
     /// # }
     /// # fn main() {}
     /// ```
