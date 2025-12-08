@@ -2,6 +2,7 @@ mod errors;
 pub use errors::*;
 
 mod messages;
+use hyper::stats::RequestId;
 use messages::*;
 
 use std::future::Future;
@@ -264,9 +265,9 @@ impl SocksConfig {
     }
 }
 
-impl<C> Service<Uri> for SocksV5<C>
+impl<C> Service<(Uri, RequestId)> for SocksV5<C>
 where
-    C: Service<Uri>,
+    C: Service<(Uri, RequestId)>,
     C::Future: Send + 'static,
     C::Response: Read + Write + Unpin + Send + 'static,
     C::Error: Send + 'static,
@@ -279,9 +280,9 @@ where
         self.inner.poll_ready(cx).map_err(super::SocksError::Inner)
     }
 
-    fn call(&mut self, dst: Uri) -> Self::Future {
+    fn call(&mut self, (dst, req_id): (Uri, RequestId)) -> Self::Future {
         let config = self.config.clone();
-        let connecting = self.inner.call(config.proxy.clone());
+        let connecting = self.inner.call((config.proxy.clone(), req_id));
 
         let fut = async move {
             let port = dst.port().map(|p| p.as_u16()).unwrap_or(443);

@@ -874,14 +874,14 @@ impl<B: Body + 'static> PoolClient<B> {
         #[cfg(not(feature = "http2"))]
         return match self.tx {
             #[cfg(feature = "http1")]
-            PoolTx::Http1(ref mut tx) => tx.try_send_request(req),
+            PoolTx::Http1(ref mut tx) => tx.try_send_request(req, req_id),
         };
 
         #[cfg(not(feature = "http1"))]
         #[cfg(feature = "http2")]
         return match self.tx {
             #[cfg(feature = "http2")]
-            PoolTx::Http2(ref mut tx) => tx.try_send_request(req),
+            PoolTx::Http2(ref mut tx) => tx.try_send_request(req, req_id),
         };
     }
 }

@@ -7,6 +7,7 @@ use std::task::{self, Poll};
 use futures_core::ready;
 use http::{HeaderMap, HeaderValue, Uri};
 use hyper::rt::{Read, Write};
+use hyper::stats::RequestId;
 use pin_project_lite::pin_project;
 use tower_service::Service;
 
@@ -116,9 +117,9 @@ impl<C> Tunnel<C> {
     }
 }
 
-impl<C> Service<Uri> for Tunnel<C>
+impl<C> Service<(Uri, RequestId)> for Tunnel<C>
 where
-    C: Service<Uri>,
+    C: Service<(Uri, RequestId)>,
     C::Future: Send + 'static,
     C::Response: Read + Write + Unpin + Send + 'static,
     C::Error: Into<Box<dyn StdError + Send + Sync>>,
@@ -132,8 +133,8 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, dst: Uri) -> Self::Future {
-        let connecting = self.inner.call(self.proxy_dst.clone());
+    fn call(&mut self, (dst, req_id): (Uri, RequestId)) -> Self::Future {
+        let connecting = self.inner.call((self.proxy_dst.clone(), req_id));
         let headers = self.headers.clone();
 
         Tunneling {

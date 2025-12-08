@@ -1119,10 +1119,12 @@ mod tests {
         let mut sender = connect_h1(addr).await;
 
         let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
-            .unwrap()
-            .1;
+            .unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1136,10 +1138,12 @@ mod tests {
         let mut sender = connect_h2(addr).await;
 
         let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
-            .unwrap()
-            .1;
+            .unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1153,10 +1157,12 @@ mod tests {
         let mut sender = connect_h2(addr).await;
 
         let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
-            .unwrap()
-            .1;
+            .unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1170,7 +1176,10 @@ mod tests {
         let mut sender = connect_h1(addr).await;
 
         let _ = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
             .expect_err("should fail");
     }
@@ -1182,10 +1191,12 @@ mod tests {
         let mut sender = connect_h1(addr).await;
 
         let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
-            .unwrap()
-            .1;
+            .unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1199,7 +1210,10 @@ mod tests {
         let mut sender = connect_h2(addr).await;
 
         let _ = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
+            .send_request(
+                Request::new(Empty::<Bytes>::new()),
+                hyper::stats::next_request_id(),
+            )
             .await
             .expect_err("should fail");
     }
@@ -1219,7 +1233,7 @@ mod tests {
         let _stream = TcpStream::connect(listener_addr).await.unwrap();
 
         let (stream, _) = listen_task.await.unwrap();
-        let stream = TokioIo::new(stream, None, None, None, None, None, None, None);
+        let stream = TokioIo::new(stream);
         let builder = auto::Builder::new(TokioExecutor::new());
         let connection = builder.serve_connection(stream, service_fn(hello));
 

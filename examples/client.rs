@@ -1,7 +1,7 @@
 use std::env;
 
 use http_body_util::Empty;
-use hyper::Request;
+use hyper::{stats, Request};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 
 #[tokio::main(flavor = "current_thread")]
@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .uri(url)
         .body(Empty::<bytes::Bytes>::new())?;
 
-    let resp = client.request(req).await?;
+    let resp = client.request(req, stats::next_request_id()).await?;
 
     eprintln!("{:?} {:?}", resp.version(), resp.status());
     eprintln!("{:#?}", resp.headers());
